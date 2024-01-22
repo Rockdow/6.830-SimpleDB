@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * @Threadsafe
  */
 public class Database {
+    // AtomicReference原子类封装了DataBase，将其对象引用变为volatile类型，保证可见性
     private static final AtomicReference<Database> _instance = new AtomicReference<>(new Database());
     private final Catalog _catalog;
     private final BufferPool _bufferpool;

@@ -9,7 +9,9 @@ import simpledb.transaction.TransactionId;
 
 import java.io.*;
 
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -33,13 +35,17 @@ public class BufferPool {
     constructor instead. */
     public static final int DEFAULT_PAGES = 50;
 
+    private final int pageNum;
+    private final Map<PageId,Page> map;
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
      * @param numPages maximum number of pages in this buffer pool.
      */
     public BufferPool(int numPages) {
-        // some code goes here
+        // 因为静态变量先于类对象存在，所以一般不用this引用
+        pageNum = numPages;
+        map = new ConcurrentHashMap<>();
     }
     
     public static int getPageSize() {
@@ -73,8 +79,21 @@ public class BufferPool {
      */
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
-        // some code goes here
-        return null;
+        if(map.size() >= pageNum){
+            if(map.containsKey(pid)){
+                return map.get(pid);
+            }else {
+                throw new DbException("bufferPool has reached maxSize");
+            }
+        }else {
+            if(map.containsKey(pid)){
+                return map.get(pid);
+            }else {
+                Page page = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
+                map.put(pid,page);
+                return page;
+            }
+        }
     }
 
     /**

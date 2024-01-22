@@ -11,10 +11,11 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * The Catalog keeps track of all available tables in the database and their
- * associated schemas.
+ * associated schemas. （schemas是数据结构，即TupleDesc）
  * For now, this is a stub catalog that must be populated with tables by a
  * user program before it can be used -- eventually, this should be converted
  * to a catalog that reads a catalog table from disk.
@@ -27,9 +28,17 @@ public class Catalog {
      * Constructor.
      * Creates a new, empty catalog.
      */
+    private final Map<Integer,DbFile> dbFileMap;
+    private final Map<Integer,String> nameMap;
+    private final Map<Integer,String> pkMap;
+
+
     public Catalog() {
-        // some code goes here
+        dbFileMap = new ConcurrentHashMap<>();
+        nameMap = new ConcurrentHashMap<>();
+        pkMap = new ConcurrentHashMap<>();
     }
+
 
     /**
      * Add a new table to the catalog.
@@ -40,8 +49,24 @@ public class Catalog {
      * conflict exists, use the last table to be added as the table for a given name.
      * @param pkeyField the name of the primary key field
      */
+    /**
+     * Iterator做遍历的时候，HashMap被修改(bb.remove(ele), size-1)，
+     * Iterator(Object ele=it.next())会检查HashMap的size，size发生变化，抛出错误ConcurrentModificationException
+     * 所以将HashMap用ConcurrentHashMap替换，解决该问题
+     * */
     public void addTable(DbFile file, String name, String pkeyField) {
-        // some code goes here
+        for(Integer id: nameMap.keySet()){
+            if(nameMap.get(id).equals(name)){
+                dbFileMap.remove(id);
+                nameMap.remove(id);
+                pkMap.remove(id);
+            }
+        }
+
+        int fileId = file.getId();
+        dbFileMap.put(fileId,file);
+        nameMap.put(fileId,name);
+        pkMap.put(fileId,pkeyField);
     }
 
     public void addTable(DbFile file, String name) {
@@ -65,7 +90,15 @@ public class Catalog {
      */
     public int getTableId(String name) throws NoSuchElementException {
         // some code goes here
-        return 0;
+        if(name == null || name.length() == 0)
+            throw new NoSuchElementException();
+
+        for(Integer id: nameMap.keySet()){
+            if(nameMap.get(id).equals(name)){
+                return id;
+            }
+        }
+        throw new NoSuchElementException();
     }
 
     /**
@@ -75,8 +108,9 @@ public class Catalog {
      * @throws NoSuchElementException if the table doesn't exist
      */
     public TupleDesc getTupleDesc(int tableid) throws NoSuchElementException {
-        // some code goes here
-        return null;
+        if(!dbFileMap.containsKey(tableid))
+            throw new NoSuchElementException();
+        return dbFileMap.get(tableid).getTupleDesc();
     }
 
     /**
@@ -86,28 +120,31 @@ public class Catalog {
      *     function passed to addTable
      */
     public DbFile getDatabaseFile(int tableid) throws NoSuchElementException {
-        // some code goes here
-        return null;
+        if(!dbFileMap.containsKey(tableid))
+            throw new NoSuchElementException();
+        return dbFileMap.get(tableid);
     }
 
     public String getPrimaryKey(int tableid) {
-        // some code goes here
-        return null;
+        if(!pkMap.containsKey(tableid))
+            throw new NoSuchElementException();
+        return pkMap.get(tableid);
     }
 
     public Iterator<Integer> tableIdIterator() {
-        // some code goes here
-        return null;
+        return dbFileMap.keySet().iterator();
     }
 
     public String getTableName(int id) {
         // some code goes here
-        return null;
+        return nameMap.get(id);
     }
     
     /** Delete all tables from the catalog */
     public void clear() {
-        // some code goes here
+        dbFileMap.clear();
+        nameMap.clear();
+        pkMap.clear();
     }
     
     /**
@@ -130,6 +167,7 @@ public class Catalog {
                 ArrayList<Type> types = new ArrayList<>();
                 String primaryKey = "";
                 for (String e : els) {
+                    // e: 字段名 字段类型 或者 字段名 字段类型 pk
                     String[] els2 = e.trim().split(" ");
                     names.add(els2[0].trim());
                     if (els2[1].trim().equalsIgnoreCase("int"))
@@ -149,6 +187,7 @@ public class Catalog {
                         }
                     }
                 }
+                // 读取磁盘上的表文件，存入cataLog中
                 Type[] typeAr = types.toArray(new Type[0]);
                 String[] namesAr = names.toArray(new String[0]);
                 TupleDesc t = new TupleDesc(typeAr, namesAr);

@@ -40,6 +40,7 @@ public enum Type implements Serializable {
                 int strLen = dis.readInt();
                 byte[] bs = new byte[strLen];
                 dis.read(bs);
+                // 这个STRING_TYPE是定长128字节的，strLen代表实际的长度，剩下的字节要跳过
                 dis.skipBytes(STRING_LEN-strLen);
                 return new StringField(new String(bs), STRING_LEN);
             } catch (IOException e) {

@@ -107,6 +107,7 @@ public class ScanTest extends SimpleDbTestBase {
 
         // Scan the table again: all pages should be cached
         SystemTestUtil.matchTuples(table, tuples);
+        // 所有的数据页存储在bufferPool中,就不会调用read读取，所以readCount应该是0
         assertEquals(0, table.readCount);
     }
 
