@@ -26,7 +26,7 @@ public class Tuple implements Serializable {
     public Tuple(TupleDesc td) {
         this.tupleDesc = td;
         // 接口数组可以使用new创建
-        fields = new Field[td.numFields()];
+        this.fields = new Field[td.numFields()];
     }
 
     /**
@@ -85,12 +85,11 @@ public class Tuple implements Serializable {
      * where \t is any whitespace (except a newline)
      */
     public String toString() {
-        // some code goes here
         StringBuilder s = new StringBuilder();
         for(int i=0;i<fields.length;i++){
             s.append(fields[i].toString());
             if(i<fields.length-1)
-                s.append("\\");
+                s.append(" ");
         }
         return s.toString();
     }

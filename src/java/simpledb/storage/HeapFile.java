@@ -72,17 +72,17 @@ public class HeapFile implements DbFile {
 
     // see DbFile.java for javadocs
     public Page readPage(PageId pid) {
+        int tableId = pid.getTableId();
+        if(tableId != this.getId())
+            throw new RuntimeException("the PageId is not legal");
+        int pageNumber = pid.getPageNumber();
+        int maxPageNum = this.numPages();
+        if(pageNumber<0 || pageNumber>=maxPageNum)
+            throw new RuntimeException("the pageNum exceed the limit");
+        FileInputStream fis = null;
+        BufferedInputStream bis = null;
         try {
-            int tableId = pid.getTableId();
-            if(tableId != this.getId())
-                throw new DbException("the PageId is not legal");
-            int pageNumber = pid.getPageNumber();
-            int maxPageNum = this.numPages();
-            if(pageNumber<0 || pageNumber>=maxPageNum)
-                throw new DbException("the pageNum exceed the limit");
-            FileInputStream fis = null;
-            BufferedInputStream bis = null;
-            fis = new FileInputStream(this.file);
+            fis = new FileInputStream(file);
             bis = new BufferedInputStream(fis);
             long skipBytes = pageNumber==0?0:pageNumber*BufferPool.getPageSize();
             bis.skip(skipBytes);
@@ -92,7 +92,7 @@ public class HeapFile implements DbFile {
             HeapPage heapPage = new HeapPage((HeapPageId) pid, bytes);
             return heapPage;
         }catch (Exception e){
-            System.out.println(e.getMessage());
+            e.printStackTrace();
             System.exit(0);
         }
         return null;
@@ -100,8 +100,21 @@ public class HeapFile implements DbFile {
 
     // see DbFile.java for javadocs
     public void writePage(Page page) throws IOException {
-        // some code goes here
-        // not necessary for lab1
+        if(page== null || page.getId()==null || page.getId().getTableId()!=this.getId())
+            throw new RuntimeException("the page is not legal");
+        int pageNumber = page.getId().getPageNumber();
+        if(pageNumber<0 || pageNumber>this.numPages())
+            throw new RuntimeException("the pageNum exceed the limit");
+        RandomAccessFile raf = null;
+        try {
+            raf = new RandomAccessFile(file,"rw");
+            long skipBytes = pageNumber==0?0:pageNumber*BufferPool.getPageSize();
+            raf.seek(skipBytes);
+            raf.write(page.getPageData());
+            raf.close();
+        }catch (IOException e){
+            throw e;
+        }
     }
 
     /**
@@ -114,17 +127,34 @@ public class HeapFile implements DbFile {
     // see DbFile.java for javadocs
     public List<Page> insertTuple(TransactionId tid, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        return null;
-        // not necessary for lab1
+        // 返回的pages会被标记成脏页，留待BufferPool统一刷盘
+        ArrayList<Page> pages = new ArrayList<>(1);
+        for(int pageNo=0;pageNo<this.numPages();pageNo++){
+            HeapPageId pageId = new HeapPageId(getId(), pageNo);
+            HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, pageId, Permissions.READ_WRITE);
+            if(page.getNumEmptySlots() > 0){
+                page.insertTuple(t);
+                pages.add(page);
+                return pages;
+            }
+        }
+        // 走到这步说明已有的page不满足要求，需要创建新页，该新创建的页要立刻写入磁盘（单元测试的意思是这样）
+        // 使用空的字节数组创建HeapPage，会划分好header和tuple部分，并初始化为未使用
+        HeapPage newPage = new HeapPage(new HeapPageId(getId(), this.numPages()), HeapPage.createEmptyPageData());
+        newPage.insertTuple(t);
+        pages.add(newPage);
+        this.writePage(newPage);
+        return pages;
     }
 
     // see DbFile.java for javadocs
     public ArrayList<Page> deleteTuple(TransactionId tid, Tuple t) throws DbException,
             TransactionAbortedException {
-        // some code goes here
-        return null;
-        // not necessary for lab1
+        ArrayList<Page> pages = new ArrayList<>(1);
+        HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, t.getRecordId().getPageId(), Permissions.READ_WRITE);
+        page.deleteTuple(t);
+        pages.add(page);
+        return pages;
     }
 
     // see DbFile.java for javadocs
@@ -152,15 +182,14 @@ public class HeapFile implements DbFile {
                 else if(it.hasNext()){
                     return true;
                 }else{
-                    pageNo++;
-                    if(pageNo<numPages()){
+                    while(++pageNo<numPages()){
                         HeapPageId heapPageId = new HeapPageId(getId(), pageNo);
                         HeapPage heapPage = (HeapPage)Database.getBufferPool().getPage(tid,heapPageId,Permissions.READ_ONLY);
                         it = heapPage.iterator();
-                        return it.hasNext();
-                    } else {
-                        return false;
+                        if(it.hasNext())
+                            return true;
                     }
+                    return false;
                 }
             }
 

@@ -9,6 +9,7 @@ import simpledb.common.Type;
 import simpledb.execution.Aggregator;
 import simpledb.execution.OpIterator;
 import simpledb.execution.StringAggregator;
+import simpledb.storage.TupleIterator;
 import simpledb.systemtest.SimpleDbTestBase;
 import static org.junit.Assert.assertEquals;
 import junit.framework.JUnit4TestAdapter;
@@ -40,6 +41,18 @@ public class StringAggregatorTest extends SimpleDbTestBase {
       { 1, 3, 3, 1 }
     };
 
+  }
+  @Test public void NoMergeCount() throws Exception {
+    scan1.open();
+    StringAggregator agg = new StringAggregator(Aggregator.NO_GROUPING, null, 1, Aggregator.Op.COUNT);
+
+    while(scan1.hasNext()){
+      agg.mergeTupleIntoGroup(scan1.next());
+    }
+    OpIterator iterator = agg.iterator();
+    iterator.open();
+    TupleIterator tupleList = TestUtil.createTupleList(1, new int[]{7});
+    TestUtil.matchAllTuples(tupleList,iterator);
   }
 
   /**

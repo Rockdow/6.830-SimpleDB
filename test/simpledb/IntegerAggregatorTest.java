@@ -2,6 +2,7 @@ package simpledb;
 
 import static org.junit.Assert.assertEquals;
 
+import java.util.ArrayList;
 import java.util.NoSuchElementException;
 
 import junit.framework.JUnit4TestAdapter;
@@ -13,6 +14,7 @@ import simpledb.common.Type;
 import simpledb.execution.Aggregator;
 import simpledb.execution.IntegerAggregator;
 import simpledb.execution.OpIterator;
+import simpledb.storage.TupleIterator;
 import simpledb.systemtest.SimpleDbTestBase;
 
 public class IntegerAggregatorTest extends SimpleDbTestBase {
@@ -23,6 +25,7 @@ public class IntegerAggregatorTest extends SimpleDbTestBase {
   int[][] min = null;
   int[][] max = null;
   int[][] avg = null;
+
 
   /**
    * Initialize each unit test
@@ -67,6 +70,31 @@ public class IntegerAggregatorTest extends SimpleDbTestBase {
     };
   }
 
+  @Test public void mergeCount() throws Exception {
+    scan1.open();
+    IntegerAggregator agg = new IntegerAggregator(0, Type.INT_TYPE, 1, Aggregator.Op.COUNT);
+
+    while(scan1.hasNext()){
+      agg.mergeTupleIntoGroup(scan1.next());
+    }
+    OpIterator iterator = agg.iterator();
+    iterator.open();
+    TupleIterator tupleList = TestUtil.createTupleList(2, new int[]{1, 3, 3, 3, 5, 1});
+    TestUtil.matchAllTuples(tupleList,iterator);
+
+  }
+  @Test public void NoMergeSum() throws Exception {
+    scan1.open();
+    IntegerAggregator agg = new IntegerAggregator(Aggregator.NO_GROUPING, null, 1, Aggregator.Op.SUM);
+
+    while(scan1.hasNext()){
+      agg.mergeTupleIntoGroup(scan1.next());
+    }
+    OpIterator iterator = agg.iterator();
+    iterator.open();
+    TupleIterator tupleList = TestUtil.createTupleList(1, new int[]{31});
+    TestUtil.matchAllTuples(tupleList,iterator);
+  }
   /**
    * Test IntegerAggregator.mergeTupleIntoGroup() and iterator() over a sum
    */

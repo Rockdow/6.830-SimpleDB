@@ -9,7 +9,9 @@ import simpledb.transaction.TransactionId;
 
 import java.io.*;
 
+import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -83,7 +85,10 @@ public class BufferPool {
             if(map.containsKey(pid)){
                 return map.get(pid);
             }else {
-                throw new DbException("bufferPool has reached maxSize");
+                evictPage();
+                Page page = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
+                map.put(pid,page);
+                return page;
             }
         }else {
             if(map.containsKey(pid)){
@@ -156,8 +161,11 @@ public class BufferPool {
      */
     public void insertTuple(TransactionId tid, int tableId, Tuple t)
         throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        // not necessary for lab1
+        List<Page> pages = Database.getCatalog().getDatabaseFile(tableId).insertTuple(tid, t);
+        for(Page page:pages){
+            page.markDirty(true,tid);
+            map.put(page.getId(),page);
+        }
     }
 
     /**
@@ -175,8 +183,14 @@ public class BufferPool {
      */
     public  void deleteTuple(TransactionId tid, Tuple t)
         throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        // not necessary for lab1
+        if(t==null || t.getRecordId()==null || t.getRecordId().getPageId()==null)
+            throw new DbException("the tuple is illegal");
+        int tableId = t.getRecordId().getPageId().getTableId();
+        List<Page> pages = Database.getCatalog().getDatabaseFile(tableId).deleteTuple(tid, t);
+        for(Page page:pages){
+            page.markDirty(true,tid);
+            map.put(page.getId(),page);
+        }
     }
 
     /**
@@ -185,9 +199,9 @@ public class BufferPool {
      *     break simpledb if running in NO STEAL mode.
      */
     public synchronized void flushAllPages() throws IOException {
-        // some code goes here
-        // not necessary for lab1
-
+        for(PageId pageId:map.keySet()){
+            flushPage(pageId);
+        }
     }
 
     /** Remove the specific page id from the buffer pool.
@@ -199,8 +213,10 @@ public class BufferPool {
         are removed from the cache so they can be reused safely
     */
     public synchronized void discardPage(PageId pid) {
-        // some code goes here
-        // not necessary for lab1
+        Page page = map.get(pid);
+        if(page == null)
+            throw new RuntimeException("bufferPool do not have the page");
+        map.remove(pid);
     }
 
     /**
@@ -208,8 +224,17 @@ public class BufferPool {
      * @param pid an ID indicating the page to flush
      */
     private synchronized  void flushPage(PageId pid) throws IOException {
-        // some code goes here
-        // not necessary for lab1
+        Page page = null;
+        if(map.containsKey(pid))
+            page = map.get(pid);
+        else
+            page = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
+
+        if(page.isDirty() != null){
+            Database.getCatalog().getDatabaseFile(pid.getTableId()).writePage(page);
+            page.markDirty(false,null);
+            map.put(pid,page);
+        }
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -224,8 +249,30 @@ public class BufferPool {
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
     private synchronized  void evictPage() throws DbException {
-        // some code goes here
-        // not necessary for lab1
+        PageId evictPageId = null;
+        PageId optPageId = null;
+        int optIdx = new Random().nextInt(map.size());
+        int count = 0;
+        for(PageId pageId:map.keySet()){
+            if(map.get(pageId).isDirty() != null){
+                evictPageId = pageId;
+                break;
+            }else if(count == optIdx){
+                optPageId = pageId;
+            }
+            count++;
+        }
+        if(evictPageId != null){
+            try {
+                flushPage(evictPageId);
+                discardPage(evictPageId);
+            } catch (IOException e) {
+                e.printStackTrace();
+                System.exit(0);
+            }
+        }else {
+            discardPage(optPageId);
+        }
     }
 
 }

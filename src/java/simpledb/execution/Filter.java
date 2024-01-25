@@ -13,6 +13,8 @@ import java.util.*;
 public class Filter extends Operator {
 
     private static final long serialVersionUID = 1L;
+    private final Predicate predicate;
+    private OpIterator[] opIterator = new OpIterator[1];
 
     /**
      * Constructor accepts a predicate to apply and a child operator to read
@@ -24,30 +26,32 @@ public class Filter extends Operator {
      *            The child operator
      */
     public Filter(Predicate p, OpIterator child) {
-        // some code goes here
+        this.predicate = p;
+        this.opIterator[0] = child;
     }
 
     public Predicate getPredicate() {
-        // some code goes here
-        return null;
+        return this.predicate;
     }
 
     public TupleDesc getTupleDesc() {
-        // some code goes here
-        return null;
+        return opIterator[0].getTupleDesc();
     }
 
     public void open() throws DbException, NoSuchElementException,
             TransactionAbortedException {
-        // some code goes here
+        super.open();
+        opIterator[0].open();
     }
 
     public void close() {
-        // some code goes here
+        super.close();
+        opIterator[0].close();
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
-        // some code goes here
+        super.open();
+        opIterator[0].rewind();
     }
 
     /**
@@ -61,19 +65,32 @@ public class Filter extends Operator {
      */
     protected Tuple fetchNext() throws NoSuchElementException,
             TransactionAbortedException, DbException {
-        // some code goes here
-        return null;
+        Tuple next = null;
+        while(opIterator[0].hasNext()){
+            next = opIterator[0].next();
+            if(next == null) {
+                break;
+            }
+            else {
+                if(predicate.filter(next))
+                    break;
+                else
+                    // 如果不匹配predicate的规则，那么要把next置为null，避免返回出错
+                    next = null;
+            }
+        }
+        return next;
+
     }
 
     @Override
     public OpIterator[] getChildren() {
-        // some code goes here
-        return null;
+        return this.opIterator;
     }
 
     @Override
     public void setChildren(OpIterator[] children) {
-        // some code goes here
+        this.opIterator = children;
     }
 
 }

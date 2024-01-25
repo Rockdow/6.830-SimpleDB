@@ -11,7 +11,11 @@ import java.io.Serializable;
 public class Predicate implements Serializable {
 
     private static final long serialVersionUID = 1L;
+    private final int filedId;
+    private final Op op;
+    private final Field operand;
 
+    // 枚举类相当于定义好成员变量和方法，在类内部创建枚举对象
     /** Constants used for return codes in Field.compare */
     public enum Op implements Serializable {
         EQUALS, GREATER_THAN, LESS_THAN, LESS_THAN_OR_EQ, GREATER_THAN_OR_EQ, LIKE, NOT_EQUALS;
@@ -23,6 +27,7 @@ public class Predicate implements Serializable {
          * @param i
          *            a valid integer Op index
          */
+        // values方法将枚举类内部对象转为数组
         public static Op getOp(int i) {
             return values()[i];
         }
@@ -54,11 +59,13 @@ public class Predicate implements Serializable {
      *            field number of passed in tuples to compare against.
      * @param op
      *            operation to use for comparison
-     * @param operand
+     * @param operand 运算对象
      *            field value to compare passed in tuples to
      */
     public Predicate(int field, Op op, Field operand) {
-        // some code goes here
+        this.filedId = field;
+        this.op = op;
+        this.operand = operand;
     }
 
     /**
@@ -66,8 +73,7 @@ public class Predicate implements Serializable {
      */
     public int getField()
     {
-        // some code goes here
-        return -1;
+        return this.filedId;
     }
 
     /**
@@ -75,8 +81,7 @@ public class Predicate implements Serializable {
      */
     public Op getOp()
     {
-        // some code goes here
-        return null;
+        return this.op;
     }
     
     /**
@@ -84,8 +89,7 @@ public class Predicate implements Serializable {
      */
     public Field getOperand()
     {
-        // some code goes here
-        return null;
+        return this.operand;
     }
     
     /**
@@ -99,8 +103,8 @@ public class Predicate implements Serializable {
      * @return true if the comparison is true, false otherwise.
      */
     public boolean filter(Tuple t) {
-        // some code goes here
-        return false;
+        Field field = t.getField(filedId);
+        return field.compare(op,operand);
     }
 
     /**
@@ -108,7 +112,6 @@ public class Predicate implements Serializable {
      * operand_string"
      */
     public String toString() {
-        // some code goes here
-        return "";
+        return "f = "+filedId+" op = "+op.toString()+" operand = "+operand.toString();
     }
 }
