@@ -105,7 +105,8 @@ public class Join extends Operator {
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
         Tuple left = null;
         Tuple right = null;
-        outer:while(opIterators[0].hasNext()){
+        // 判断 opIterators[0].hasNext() || opIterators[1].hasNext() 是让 opIterators[0]拿出最后一个元素后可以再遍历一遍 opIterators[1]中的元素
+        outer:while(opIterators[0].hasNext() || opIterators[1].hasNext()){
             if(initial==false || !opIterators[1].hasNext()){
                 initial = true;
                 if(!opIterators[1].hasNext())
