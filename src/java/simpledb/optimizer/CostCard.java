@@ -7,6 +7,7 @@ import java.util.List;
 /** Class returned by {@link JoinOptimizer#computeCostAndCardOfSubplan} specifying the
     cost and cardinality of the optimal plan represented by plan.
 */
+// 该类存储一个list的LogicalJoinNode，以及该组LogicalJoinNode的对应的cost和card
 public class CostCard {
     /** The cost of the optimal subplan */
     public double cost;

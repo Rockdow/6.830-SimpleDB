@@ -96,6 +96,7 @@ public class JoinOptimizerTest extends SimpleDbTestBase {
         TableStats.setTableStats(tableName2, stats2);
     }
 
+    // 根据传入的参数计算实际的 joinCost
     private double[] getRandomJoinCosts(JoinOptimizer jo, LogicalJoinNode js,
                                         int[] card1s, int[] card2s, double[] cost1s, double[] cost2s) {
         double[] ret = new double[card1s.length];
@@ -153,7 +154,7 @@ public class JoinOptimizerTest extends SimpleDbTestBase {
                 Integer.toString(8), Integer.toString(7), Predicate.Op.EQUALS);
         checkJoinEstimateCosts(jo, equalsJoinNode);
     }
-
+    //  计算一系列的joinCost是否满足预定的线性特征
     private void checkJoinEstimateCosts(JoinOptimizer jo,
             LogicalJoinNode equalsJoinNode) {
         int[] card1s = new int[20];

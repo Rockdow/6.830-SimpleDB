@@ -3,6 +3,7 @@ package simpledb.optimizer;
 /** A LogicalSelectListNode represents a clause in the select list in
  * a LogicalQueryPlan
 */
+// 该类存储 查询的字段，以及该字段上可能存在的聚合函数
 public class LogicalSelectListNode {
     /** The field name being selected; the name may be (optionally) be
      * qualified with a table name or alias.

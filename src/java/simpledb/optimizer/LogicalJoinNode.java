@@ -4,6 +4,7 @@ import simpledb.execution.Predicate;
 
 /** A LogicalJoinNode represens the state needed of a join of two
  * tables in a LogicalQueryPlan */
+// 该类是存储 两表间join查询 的逻辑信息
 public class LogicalJoinNode {
 
     /** The first table to join (may be null). It's the alias of the table (if no alias, the true table name) */
@@ -48,6 +49,7 @@ public class LogicalJoinNode {
     
     /** Return a new LogicalJoinNode with the inner and outer (t1.f1
      * and t2.f2) tables swapped. */
+    // 即修改 t1 join t2 on t1.fl op t2.f2 为 t2 join t1 on t2.f2 op t1.f1
     public LogicalJoinNode swapInnerOuter() {
         Predicate.Op newp;
         if (p == Predicate.Op.GREATER_THAN)

@@ -47,6 +47,7 @@ public class JoinOptimizer {
      * @param plan2
      *            The right join node's child
      */
+    // 返回两表连接的后的iterator
     public static OpIterator instantiateJoin(LogicalJoinNode lj,
                                              OpIterator plan1, OpIterator plan2) throws ParsingException {
 
@@ -130,7 +131,9 @@ public class JoinOptimizer {
             // HINT: You may need to use the variable "j" if you implemented
             // a join algorithm that's more complicated than a basic
             // nested-loops join.
-            return -1.0;
+            double ioCost = cost1 + card1 * cost2;
+            double cpuCost = card1 * cost2;
+            return ioCost + cpuCost;
         }
     }
 
@@ -174,9 +177,15 @@ public class JoinOptimizer {
                                                    String field2PureName, int card1, int card2, boolean t1pkey,
                                                    boolean t2pkey, Map<String, TableStats> stats,
                                                    Map<String, Integer> tableAliasToId) {
-        int card = 1;
-        // some code goes here
-        return card <= 0 ? 1 : card;
+        switch (joinOp){
+            case EQUALS:
+                if(t1pkey || t2pkey)
+                    return Math.min(card1,card2);
+                else
+                    return Math.max(card1,card2);
+            default:
+                return (int) (card1*card2*0.3);
+        }
     }
 
     /**
@@ -189,6 +198,7 @@ public class JoinOptimizer {
      *            The size of the subsets of interest
      * @return a set of all subsets of the specified size
      */
+    // 返回list所有长度为（1，size）的子集合
     public <T> Set<Set<T>> enumerateSubsets(List<T> v, int size) {
         Set<Set<T>> els = new HashSet<>();
         els.add(new HashSet<>());
@@ -235,10 +245,27 @@ public class JoinOptimizer {
             Map<String, TableStats> stats,
             Map<String, Double> filterSelectivities, boolean explain)
             throws ParsingException {
-
-        // some code goes here
-        //Replace the following
-        return joins;
+        PlanCache planCache = new PlanCache();
+        for(int i=1;i<=joins.size();i++){
+            Set<Set<LogicalJoinNode>> subsets = enumerateSubsets(joins, i);
+            for(Set<LogicalJoinNode> subset:subsets){
+                CostCard bestCostCard = new CostCard();
+                bestCostCard.cost = Double.MAX_VALUE;
+                for(LogicalJoinNode node:subset){
+                    CostCard costCard = computeCostAndCardOfSubplan(stats, filterSelectivities, node, subset, bestCostCard.cost, planCache);
+                    if(costCard == null)
+                        continue;
+                    else if(costCard.cost < bestCostCard.cost){
+                        bestCostCard = costCard;
+                    }
+                }
+                if(bestCostCard.cost != Double.MAX_VALUE)
+                    planCache.addPlan(subset,bestCostCard.cost,bestCostCard.card,bestCostCard.plan);
+            }
+        }
+        if (explain)
+            printJoins(joins,planCache,stats,filterSelectivities);
+        return planCache.getOrder(new HashSet<>(joins));
     }
 
     // ===================== Private Methods =================================
@@ -302,7 +329,7 @@ public class JoinOptimizer {
         double t1cost, t2cost;
         int t1card, t2card;
         boolean leftPkey, rightPkey;
-
+        // 一开始size为1的子集，在remove(j)后news为空，会走这步
         if (news.isEmpty()) { // base case -- both are base relations
             prevBest = new ArrayList<>();
             t1cost = stats.get(table1Name).estimateScanCost();
@@ -319,6 +346,7 @@ public class JoinOptimizer {
                     j.f2PureName);
         } else {
             // news is not empty -- figure best way to join j to news
+            // 先从planCache中获取除去joinToRemove后，最优的join排列
             prevBest = pc.getOrder(news);
 
             // possible that we have not cached an answer, if subset
@@ -331,6 +359,8 @@ public class JoinOptimizer {
             int bestCard = pc.getCard(news);
 
             // estimate cost of right subtree
+            // 如果表1已经在最优的join排列之中了，那么添加表1的后 t1cost 和 t1card 和之前的 最优cost、最优card 相同 （因为这时就是依据
+            // prevBest来连接表2，所以表1的相应数据都和prevBest的相同）
             if (doesJoin(prevBest, table1Alias)) { // j.t1 is in prevBest
                 t1cost = prevBestCost; // left side just has cost of whatever
                                        // left
@@ -361,11 +391,12 @@ public class JoinOptimizer {
             } else {
                 // don't consider this plan if one of j.t1 or j.t2
                 // isn't a table joined in prevBest (cross product)
+                // 必须左深树结构，就是logicalJoinNode j一定要含有在prevBest中出现过的表名，否则不考虑
                 return null;
             }
         }
 
-        // case where prevbest is left
+        // 判断是 表1 join 表2 开销小 还是 表2 join 表1 开销小，并将开销小的设置为 LocalJoinNode j
         double cost1 = estimateJoinCost(j, t1card, t2card, t1cost, t2cost);
 
         LogicalJoinNode j2 = j.swapInnerOuter();

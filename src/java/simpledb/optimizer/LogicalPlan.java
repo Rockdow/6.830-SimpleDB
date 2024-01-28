@@ -24,11 +24,13 @@ import java.io.File;
  * {@link JoinOptimizer} to order joins optimally and to select the
  * best implementations for joins.
  */
+// logicalPlan 存储的各部分，按sql组成的顺序应该是 LogicalSelectListNode、LogicalScanNode、LogicJoinNode、LogicalFilterNode
 public class LogicalPlan {
     private List<LogicalJoinNode> joins;
     private final List<LogicalScanNode> tables;
     private final List<LogicalFilterNode> filters;
     private final Map<String, OpIterator> subplanMap;
+    // tableMap存放表别名和表ID之间的对应关系
     private final Map<String,Integer> tableMap;
 
     private final List<LogicalSelectListNode> selectList;
@@ -59,6 +61,7 @@ public class LogicalPlan {
 
         @param query the text of the query associated with this plan
     */
+    // 该方法只是存储待解析的sql语句，在需要的时候打印出来
     public void setQuery(String query)  {
         this.query = query;
     }
@@ -119,7 +122,7 @@ public class LogicalPlan {
      *  @throws ParsingException if either of the fields is ambiguous,
      *      or is not in one of the tables added via {@link #addScan}
     */
-
+    // 加入两表直接join的节点
     public void addJoin( String joinField1, String joinField2, Predicate.Op pred) throws ParsingException {
         joinField1 = disambiguateName(joinField1);
         joinField2 = disambiguateName(joinField2);
@@ -148,12 +151,13 @@ public class LogicalPlan {
      *  @throws ParsingException if either of the fields is ambiguous,
      *      or is not in one of the tables added via {@link #addScan}
      */
+    // 加入 某表和子查询 连接的节点
     public void addJoin(String joinField1, OpIterator joinField2, Predicate.Op pred) throws ParsingException {
         joinField1 = disambiguateName(joinField1);
 
         String table1 = joinField1.split("[.]")[0];
         String pureField = joinField1.split("[.]")[1];
-
+        // LogicalSubplanJoinNode 继承了 LogicalJoinNode，在构造函数中传入的 joinField2是该子查询的Iterator，默认连接子查询数据中的第一个字段
         LogicalSubplanJoinNode lj = new LogicalSubplanJoinNode(table1,pureField, joinField2, pred);
         System.out.println("Added subplan join on " + joinField1);
         joins.add(lj);
@@ -226,6 +230,7 @@ public class LogicalPlan {
      *  @throws ParsingException if the field cannot be found in any of the tables, or if the
      *   field is ambiguous (appears in multiple tables)
      */
+    // 传来的name可能为 表名.列名 或 列名，如果是只有列名，那么要查询含有LogicalScanNode的tables成员变量
     String disambiguateName(String name) throws ParsingException {
 
         String[] fields = name.split("[.]");
@@ -243,7 +248,8 @@ public class LogicalPlan {
             LogicalScanNode table = tableIt.next();
             try {
                 TupleDesc td = Database.getCatalog().getDatabaseFile(table.t).getTupleDesc();
-//                int id = 
+//                int id =
+                // 如果没查到的话直接抛出NoSuchElementException，进行下次循环
                   td.fieldNameToIndex(name);
                 if (tableName == null) {
                     tableName = table.alias;
@@ -293,6 +299,7 @@ public class LogicalPlan {
         Map<String,Double> filterSelectivities = new HashMap<>();
         Map<String,TableStats> statsMap = new HashMap<>();
 
+        // 先把LogicalScanNode中的table遍历一遍，得到 表别名和seqScan的映射，表名和tableStats的映射以及该表在seqScan情况下的selectivity
         while (tableIt.hasNext()) {
             LogicalScanNode table = tableIt.next();
             SeqScan ss = null;
@@ -310,11 +317,13 @@ public class LogicalPlan {
         }
 
         for (LogicalFilterNode lf : filters) {
+            // 从subPlan中获取全表遍历的iterator
             OpIterator subplan = subplanMap.get(lf.tableAlias);
             if (subplan == null) {
                 throw new ParsingException("Unknown table in WHERE clause " + lf.tableAlias);
             }
 
+            // 创建过滤类型的field对象
             Field f;
             Type ftyp;
             TupleDesc td = subplanMap.get(lf.tableAlias).getTupleDesc();
@@ -329,22 +338,28 @@ public class LogicalPlan {
             else
                 f = new StringField(lf.c, Type.STRING_LEN);
 
+            // 创建过滤规则
             Predicate p = null;
             try {
                 p = new Predicate(subplan.getTupleDesc().fieldNameToIndex(lf.fieldQuantifiedName), lf.p, f);
             } catch (NoSuchElementException e) {
                 throw new ParsingException("Unknown field " + lf.fieldQuantifiedName);
             }
+            // 将全表遍历的iterator替换为条件过滤filter的iterator
             subplanMap.put(lf.tableAlias, new Filter(p, subplan));
 
+            // 获取之前存储的表别名对应的tableStats
             TableStats s = statsMap.get(Database.getCatalog().getTableName(this.getTableId(lf.tableAlias)));
 
+            // 获取filter之后的，该表的selectivity
             double sel = s.estimateSelectivity(subplan.getTupleDesc().fieldNameToIndex(lf.fieldQuantifiedName), lf.p, f);
+            // 更新该表的selectivity
             filterSelectivities.put(lf.tableAlias, filterSelectivities.get(lf.tableAlias) * sel);
 
             //s.addSelectivityFactor(estimateFilterSelectivity(lf,statsMap));
         }
-        
+
+        // 使用JoinOptimizer对该表的join连接进行优化
         JoinOptimizer jo = new JoinOptimizer(this,joins);
 
         joins = jo.orderJoins(statsMap,filterSelectivities,explain);
@@ -355,6 +370,8 @@ public class LogicalPlan {
             boolean isSubqueryJoin = lj instanceof LogicalSubplanJoinNode;
             String t1name, t2name;
 
+            // 获取join连接的两个表别名，接着获取两表的iterator，对于logicalSubPlanNode，直接通过subPlan获取iterator
+            // equivMap存储join连接后，作用相同的表之间映射
             if (equivMap.get(lj.t1Alias) != null)
                 t1name = equivMap.get(lj.t1Alias);
             else
@@ -381,14 +398,18 @@ public class LogicalPlan {
                 throw new ParsingException("Unknown table in WHERE clause " + lj.t2Alias);
 
             OpIterator j;
+            // 获取两表连接后的iterator
             j = JoinOptimizer.instantiateJoin(lj, plan1, plan2);
+            // 更新 subPlanMap
             subplanMap.put(t1name, j);
 
             if (!isSubqueryJoin) {
+                // 不是子查询的话，移除subPlanMap中 表2 对应的iterator，并标记 表1和表2 的iterator相同（join连接后只取表1作为连接后iterator的主键）
                 subplanMap.remove(t2name);
                 equivMap.put(t2name, t1name);  //keep track of the fact that this new node contains both tables
                 //make sure anything that was equiv to lj.t2 (which we are just removed) is
                 // marked as equiv to lj.t1 (which we are replacing lj.t2 with.)
+                // 将之前和 表2 相同的关系对，全部换成和表1相同
                 for (Map.Entry<String, String> s : equivMap.entrySet()) {
                     String val = s.getValue();
                     if (val.equals(t2name)) {
@@ -401,6 +422,7 @@ public class LogicalPlan {
 
         }
 
+        // 最终的subPlanMap一定只包含一个元素 即经过 filter和join后 的iterator
         if (subplanMap.size() > 1) {
             throw new ParsingException("Query does not include join expressions joining all nodes!");
         }
@@ -413,6 +435,8 @@ public class LogicalPlan {
         for (int i = 0; i < selectList.size(); i++) {
             LogicalSelectListNode si = selectList.get(i);
             if (si.aggOp != null) {
+                // 因为有aggOp的话需要分情况，一个是只有聚合操作，只返回一列
+                // 一个是既有聚合操作也有group by，返回的是(groupVal, aggregateVal)
                 outFields.add(groupByField!=null?1:0);
                 TupleDesc td = node.getTupleDesc();
 //                int  id;
@@ -425,6 +449,8 @@ public class LogicalPlan {
                 outTypes.add(Type.INT_TYPE);  //the type of all aggregate functions is INT
 
             } else if (hasAgg) {
+                    // 因为仅支持一个group by field 和 一个 聚合函数，所以在hasAgg为true的情况下，最多只有两个LogicalSelectListNode，所以可以这样写
+                    // 存在聚合函数且groupByFiled为null的情况下，走到这步的si既不属于聚合函数也不属于groupByFiled，肯定要报错
                     if (groupByField == null) {
                         throw new ParsingException("Field " + si.fname + " does not appear in GROUP BY list");
                     }
@@ -457,6 +483,7 @@ public class LogicalPlan {
                 }
         }
 
+        // 如果存在聚合函数，将现在的iterator替换为聚合后的iterator
         if (hasAgg) {
             TupleDesc td = node.getTupleDesc();
             Aggregate aggNode;
@@ -471,6 +498,7 @@ public class LogicalPlan {
             node = aggNode;
         }
 
+        // 如果存在排序，将现在的iterator替换为排序后的iterator
         if (hasOrderBy) {
             node = new OrderBy(node.getTupleDesc().fieldNameToIndex(oByField), oByAsc, node);
         }
