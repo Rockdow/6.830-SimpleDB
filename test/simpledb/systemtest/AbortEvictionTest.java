@@ -66,6 +66,7 @@ public class AbortEvictionTest extends SimpleDbTestBase {
     @Test public void testDoNotEvictDirtyPages()
             throws IOException, DbException, TransactionAbortedException {
         // Allocate a file with ~10 pages of data
+        // f实际的页数是11，前10页都是满的，无法写入
         HeapFile f = SystemTestUtil.createRandomHeapFile(2, 512*10, null, null);
         Database.resetBufferPool(2);
 
@@ -74,12 +75,15 @@ public class AbortEvictionTest extends SimpleDbTestBase {
         t.start();
 
         // Insert a new row
+        // 在使用AbortEvictionTest.insertRow的过程中，bufferPool只能存储2页，缓存会满，从而调用evictPage方法驱逐clean页
         AbortEvictionTest.insertRow(f, t);
 
+        // 插入完后，lockManager中最后一页上有X锁
         // The tuple must exist in the table
         boolean found = AbortEvictionTest.findMagicTuple(f, t);
         assertTrue(found);
         // ABORT
+        // 中断事务后，从磁盘重新读取受该锁影响的页到缓存中
         t.transactionComplete(true);
 
         // A second transaction must not find the tuple

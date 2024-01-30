@@ -4,6 +4,7 @@ import simpledb.common.Database;
 import simpledb.common.Permissions;
 import simpledb.common.DbException;
 import simpledb.common.DeadlockException;
+import simpledb.transaction.PageLockManager;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
@@ -11,9 +12,7 @@ import java.io.*;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -39,6 +38,7 @@ public class BufferPool {
 
     private final int pageNum;
     private final Map<PageId,Page> map;
+    private final PageLockManager lockManager;
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -48,6 +48,7 @@ public class BufferPool {
         // 因为静态变量先于类对象存在，所以一般不用this引用
         pageNum = numPages;
         map = new ConcurrentHashMap<>();
+        lockManager = new PageLockManager();
     }
     
     public static int getPageSize() {
@@ -81,6 +82,14 @@ public class BufferPool {
      */
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
+        int lockType = 0;
+        if(perm == Permissions.READ_WRITE)
+            lockType = 1;
+        while(true){
+            if(lockManager.acquireLock(tid,pid,lockType))
+                break;
+        }
+
         if(map.size() >= pageNum){
             if(map.containsKey(pid)){
                 return map.get(pid);
@@ -110,9 +119,9 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param pid the ID of the page to unlock
      */
+    // 释放page中与事务tid相关的锁，在事务未提交之前调用，违背了两阶段锁原则，所以是unsafe的
     public  void unsafeReleasePage(TransactionId tid, PageId pid) {
-        // some code goes here
-        // not necessary for lab1|lab2
+        lockManager.releaseLock(tid,pid);
     }
 
     /**
@@ -121,15 +130,12 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      */
     public void transactionComplete(TransactionId tid) {
-        // some code goes here
-        // not necessary for lab1|lab2
+        transactionComplete(tid,true);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
     public boolean holdsLock(TransactionId tid, PageId p) {
-        // some code goes here
-        // not necessary for lab1|lab2
-        return false;
+       return lockManager.isHoldLock(tid,p);
     }
 
     /**
@@ -140,8 +146,24 @@ public class BufferPool {
      * @param commit a flag indicating whether we should commit or abort
      */
     public void transactionComplete(TransactionId tid, boolean commit) {
-        // some code goes here
-        // not necessary for lab1|lab2
+        List<PageId> list = lockManager.getPageIdWithTID(tid);
+        if(commit == true){
+            for(PageId pageId:list){
+                try {
+                    flushPage(pageId);
+                    lockManager.releaseLock(tid,pageId);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }else {
+            for(PageId pageId:list){
+                Page page = Database.getCatalog().getDatabaseFile(pageId.getTableId()).readPage(pageId);
+                map.put(pageId,page);
+                lockManager.releaseLock(tid,pageId);
+            }
+        }
+
     }
 
     /**
@@ -249,30 +271,60 @@ public class BufferPool {
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
     private synchronized  void evictPage() throws DbException {
-        PageId evictPageId = null;
-        PageId optPageId = null;
-        int optIdx = new Random().nextInt(map.size());
-        int count = 0;
-        for(PageId pageId:map.keySet()){
-            if(map.get(pageId).isDirty() != null){
-                evictPageId = pageId;
-                break;
-            }else if(count == optIdx){
-                optPageId = pageId;
+//        PageId evictPageId = null;
+//        PageId optPageId = null;
+//        int optIdx = new Random().nextInt(map.size());
+//        int count = 0;
+//        for(PageId pageId:map.keySet()){
+//            if(map.get(pageId).isDirty() != null){
+//                evictPageId = pageId;
+//                break;
+//            }else if(count == optIdx){
+//                optPageId = pageId;
+//            }
+//            count++;
+//        }
+//        if(evictPageId != null){
+//            try {
+//                flushPage(evictPageId);
+//                discardPage(evictPageId);
+//            } catch (IOException e) {
+//                e.printStackTrace();
+//                System.exit(0);
+//            }
+//        }else {
+//            discardPage(optPageId);
+//        }
+
+        // 找到一个没有被事务上锁的clean页，将其驱逐
+        for(PageId pageId: map.keySet()){
+            Page page = map.get(pageId);
+            if(page.isDirty() == null){
+                if(!lockManager.isExistLock(pageId)){
+                    discardPage(pageId);
+                    return;
+                }
             }
-            count++;
         }
-        if(evictPageId != null){
-            try {
-                flushPage(evictPageId);
-                discardPage(evictPageId);
-            } catch (IOException e) {
-                e.printStackTrace();
-                System.exit(0);
+        // 到这说明所有clean页被上锁
+        for(PageId pageId: map.keySet()){
+            Page page = map.get(pageId);
+            if(page.isDirty() == null){
+                if(lockManager.isExistLock(pageId)){
+                    if(lockManager.isOnlySLock(pageId)) {
+                        // 此处违反了2pl，但由于只是读锁，问题不大，因为要把页驱逐，必须把lockManager上对应页的锁也删除
+                        lockManager.removePageLock(pageId);
+                        discardPage(pageId);
+                        return;
+                    }
+                }else {
+                    discardPage(pageId);
+                    return;
+                }
             }
-        }else {
-            discardPage(optPageId);
         }
+        // 到这说明都是dirty页
+        throw new DbException("the bufferPool is full of dirty page");
     }
 
 }

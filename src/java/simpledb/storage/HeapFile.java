@@ -136,14 +136,19 @@ public class HeapFile implements DbFile {
                 page.insertTuple(t);
                 pages.add(page);
                 return pages;
+            }else{
+                //因为未修改页的内容，所以虽然违背了2pl，也可以释放锁
+                Database.getBufferPool().unsafeReleasePage(tid,pageId);
             }
         }
         // 走到这步说明已有的page不满足要求，需要创建新页，该新创建的页要立刻写入磁盘（单元测试的意思是这样）
         // 使用空的字节数组创建HeapPage，会划分好header和tuple部分，并初始化为未使用
         HeapPage newPage = new HeapPage(new HeapPageId(getId(), this.numPages()), HeapPage.createEmptyPageData());
         newPage.insertTuple(t);
-        pages.add(newPage);
         this.writePage(newPage);
+        // 新建的页加入缓存
+        Database.getBufferPool().getPage(tid, newPage.getId(), Permissions.READ_WRITE);
+        pages.add(newPage);
         return pages;
     }
 

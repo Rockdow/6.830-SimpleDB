@@ -53,6 +53,7 @@ public class TransactionTest extends SimpleDbTestBase {
                 fail("Timed out waiting for transaction to complete");
             }
             try {
+                // 主线程会等待所有的tester线程执行完毕后再继续执行
                 tester.join(timeout);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
