@@ -14,7 +14,7 @@ import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
 /**
- * BTreeFileEncoder reads a comma delimited text file and converts it to
+ * BTreeFileEncoder reads a comma delimited text file（逗号分隔的文本文件） and converts it to
  * pages of binary data in the appropriate format for simpledb B+ tree
  * pages.
  */
@@ -33,6 +33,7 @@ public class BTreeFileEncoder {
 	 */
 	public static BTreeFile convert(List<List<Integer>> tuples, File hFile,
 			File bFile, int keyField, int numFields) throws IOException {
+		// 先把tuples写到tempInput上，以逗号分隔每个值，每个tuple写完后换行
 		File tempInput = File.createTempFile("tempTable", ".txt");
 		tempInput.deleteOnExit();
 		BufferedWriter bw = new BufferedWriter(new FileWriter(tempInput));
@@ -84,9 +85,11 @@ public class BTreeFileEncoder {
 			Transaction t = new Transaction();
 			while (it.hasNext()) {
 				Tuple tup = it.next();
+				// 这里会调用BTreeFile的insert方法
 				Database.getBufferPool().insertTuple(t.getId(), bf.getId(), tup);
 				count++;
 				if(count >= 40) {
+					// 每插入40条记录，就把脏页写入disk
 					Database.getBufferPool().flushAllPages();
 					count = 0;
 				}
@@ -100,6 +103,7 @@ public class BTreeFileEncoder {
 		}
 
         try {
+			// 最后把不满40条的记录写入disk
 			Database.getBufferPool().flushAllPages();
 		} catch(Exception e) {
 			e.printStackTrace();

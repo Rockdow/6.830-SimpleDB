@@ -26,6 +26,9 @@ pages (on checkpoints and recovery.)  This can lead to deadlock.  For
 that reason, any LogFile operation that needs to access the BufferPool
 must not be declared synchronized and must begin with a block like:
 
+即某个线程先拿到取bufferPool对象的锁，再请求logFile对象的锁进行日志文件记录时
+另一个线程先拿到logFile对象的锁，再请求bufferPool对象的锁进行flush page
+这样就会造成死锁，所以统一先拿bufferPool对象的锁，再拿logFile对象的锁来避免死锁
 <p>
 <pre>
     synchronized (Database.getBufferPool()) {
@@ -125,6 +128,8 @@ public class LogFile {
     // we're about to append a log record. if we weren't sure whether the
     // DB wants to do recovery, we're sure now -- it didn't. So truncate
     // the log.
+    // preAppend()通过recoveryUndecided判断是不是新建的logFile，如果是新建的，就从头开始添加record
+    // 否则，只单纯记录record的总数
     void preAppend() throws IOException {
         totalRecords++;
         if(recoveryUndecided){
@@ -459,7 +464,42 @@ public class LogFile {
         synchronized (Database.getBufferPool()) {
             synchronized(this) {
                 preAppend();
-                // some code goes here
+                Long begin = tidToFirstLogRecord.get(tid.getId());
+                // 将文件指针设置为该事务第一个record的位置
+                raf.seek(begin);
+                long length = raf.length();
+                while (raf.getFilePointer() < length){
+                    int type = raf.readInt();
+                    long tempTid = raf.readLong();
+                    if(type==UPDATE_RECORD && tempTid==tid.getId()){
+                        Page before = readPageData(raf);
+                        Page after = readPageData(raf);
+                        Database.getCatalog().getDatabaseFile(after.getId().getTableId()).writePage(before);
+                        Database.getBufferPool().discardPage(after.getId());
+                        raf.readLong();
+                    }else {
+                        switch (type){
+                            case ABORT_RECORD:
+                            case COMMIT_RECORD:
+                            case BEGIN_RECORD:
+                                raf.readLong();
+                                break;
+                            case UPDATE_RECORD:
+                                readPageData(raf);
+                                readPageData(raf);
+                                raf.readLong();
+                                break;
+                            case CHECKPOINT_RECORD:
+                                int count = raf.readInt();
+                                while(count > 0){
+                                    raf.readLong();
+                                    raf.readLong();
+                                    count--;
+                                }
+                                raf.readLong();
+                        }
+                    }
+                }
             }
         }
     }
@@ -482,11 +522,97 @@ public class LogFile {
         committed transactions are installed and that the
         updates of uncommitted transactions are not installed.
     */
+    /**
+     * checkPoint中周期性记录了活跃事务的相关信息，在发生crash时，这些活跃事务可能提交了，也可能未提交，
+     * 而除了这些活跃事务之外，logFile中记录的其它事务都已完成，不需要进行recover，所以，关键点在于找到
+     * 这些活跃事务中最早开始的那个，从它的firstRecordOffset开始，扫描logFile，将所右record类型为commit
+     * 的事务进行redo，所有record类型为update的事务进行undo*/
     public void recover() throws IOException {
         synchronized (Database.getBufferPool()) {
             synchronized (this) {
                 recoveryUndecided = false;
-                // some code goes here
+                long recoverOffset = 0l;
+                // 先找到活跃事务中最早开始的那个事务的firstRecordOffset
+                raf.seek(0);
+//                raf.seek(0);
+////                long i = raf.readLong();
+////                System.out.println(i);
+////                int j = raf.readInt();
+////                System.out.println(j);
+                long checkpointOffset = raf.readLong();
+                if(checkpointOffset != -1){
+                    raf.seek(checkpointOffset);
+                    raf.readInt();
+                    raf.readLong();
+                    int count = raf.readInt();
+                    long minOffset = Long.MAX_VALUE;
+                    while(count > 0){
+                        raf.readLong();
+                        long temp = raf.readLong();
+                        if(temp < minOffset)
+                            minOffset = temp;
+                        count--;
+                    }
+                    recoverOffset = minOffset;
+                }
+                if(checkpointOffset != -1)
+                    raf.seek(recoverOffset);
+                HashSet<Long> commitIds = new HashSet<>();
+                // 注意，一共分为两大类，完成和未完成，完成的要redo，未完成的要undo
+                // 不需要考虑abort record，它被分为未完成大类中
+                HashMap<Long,ArrayList<Page>> before = new HashMap<>();
+                HashMap<Long,ArrayList<Page>> after = new HashMap<>();
+                long length = raf.length();
+                while (raf.getFilePointer() < length){
+                    int type = raf.readInt();
+                    long tempTid = raf.readLong();
+                    switch (type){
+                        case COMMIT_RECORD:
+                            commitIds.add(tempTid);
+                        case ABORT_RECORD:
+                        case BEGIN_RECORD:
+                            raf.readLong();
+                            break;
+                        case UPDATE_RECORD:
+                            Page beforePage = readPageData(raf);
+                            Page afterPage = readPageData(raf);
+                            ArrayList<Page> beforePages = before.getOrDefault(tempTid, new ArrayList<>());
+                            ArrayList<Page> afterPages = after.getOrDefault(tempTid, new ArrayList<>());
+                            beforePages.add(beforePage);
+                            afterPages.add(afterPage);
+                            before.put(tempTid,beforePages);
+                            after.put(tempTid,afterPages);
+                            raf.readLong();
+                            break;
+                        case CHECKPOINT_RECORD:
+                            int count = raf.readInt();
+                            while(count > 0){
+                                raf.readLong();
+                                raf.readLong();
+                                count--;
+                            }
+                            raf.readLong();
+                    }
+                }
+                // undo
+                for(Long transId:before.keySet()){
+                    if(!commitIds.contains(transId)){
+                        ArrayList<Page> pages = before.get(transId);
+                        for (Page page:pages){
+                            Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
+                            Database.getBufferPool().discardPage(page.getId());
+                        }
+                    }
+                }
+                // redo
+                for(Long transId:after.keySet()){
+                    if(commitIds.contains(transId)){
+                        ArrayList<Page> pages = after.get(transId);
+                        for (Page page:pages){
+                            Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
+                        }
+                    }
+                }
             }
          }
     }

@@ -237,6 +237,7 @@ public class BTreeFileInsertTest extends SimpleDbTestBase {
 		// and packed third tier of leaf pages
     	// (124 entries per internal/leaf page, 125 children per internal page ->
     	// 125*2*124 = 31000)
+		// 会自动写好B+树的结构，包括internal节点和leaf节点等
 		BTreeFile bigFile = BTreeUtility.createRandomBTreeFile(2, 31000,
 				null, null, 0);
 		
@@ -244,6 +245,9 @@ public class BTreeFileInsertTest extends SimpleDbTestBase {
 		Database.resetBufferPool(1000);
 
 		// there should be 250 leaf pages + 3 internal nodes
+		// 31000/124 = 250 （leaf节点）
+		// 250/125 = 2 （internal节点）
+		// 1 (root节点)
 		assertEquals(253, bigFile.numPages());
 
 		// now insert some random tuples and make sure we can find them

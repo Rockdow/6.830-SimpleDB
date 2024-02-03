@@ -42,6 +42,7 @@ public class BTreeFileInsertTest extends SimpleDbTestBase {
 		File emptyFile = File.createTempFile("empty", ".dat");
 		emptyFile.deleteOnExit();
 		Database.reset();
+		// 创建三页的空BTreeFile，叶节点存储的tuple列数为2
 		BTreeFile empty = BTreeUtility.createEmptyBTreeFile(emptyFile.getAbsolutePath(), 2, 0, 3);
 		int tableid = empty.getId();
 		int keyField = 0;

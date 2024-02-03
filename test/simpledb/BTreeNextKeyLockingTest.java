@@ -43,7 +43,7 @@ public class BTreeNextKeyLockingTest extends SimpleDbTestBase {
 	public void nextKeyLockingTestLessThan() throws Exception {
 		
 		// This should create a B+ tree with 100 leaf pages
-		BTreeFile bigFile = BTreeUtility.createRandomBTreeFile(2, 50200,
+		BTreeFile bigFile = BTreeUtility.createRandomBTreeFile(2, 502*3,
 				null, null, 0);
 
 		// get a key from the middle of the root page
@@ -52,7 +52,7 @@ public class BTreeNextKeyLockingTest extends SimpleDbTestBase {
 		BTreePageId rootId = rootPtr.getRootId();
 		assertEquals(rootId.pgcateg(), BTreePageId.INTERNAL);
 		BTreeInternalPage root = (BTreeInternalPage) Database.getBufferPool().getPage(tid, rootId, Permissions.READ_ONLY);
-		int keyIndex = 50; // this should be right in the middle since there are 100 leaf pages
+		int keyIndex = 1; // this should be right in the middle since there are 100 leaf pages
 		Iterator<BTreeEntry> it = root.iterator();
 		Field key = null;
 		int count = 0;

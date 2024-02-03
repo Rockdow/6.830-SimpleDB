@@ -58,7 +58,7 @@ public class HeapFile implements DbFile {
      */
     public int getId() {
         // 用文件的hashCode充当唯一ID
-        return this.file.hashCode();
+        return this.file.getAbsolutePath().hashCode();
     }
 
     /**

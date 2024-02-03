@@ -57,6 +57,7 @@ public class BTreeFileReadTest extends SimpleDbTestBase {
 	 * Unit test for BTreeFile.getTupleDesc()
 	 */
 	@Test
+	// 只支持INT_TYPE
 	public void getTupleDesc() {
 		assertEquals(td, f.getTupleDesc());        
 	}
@@ -75,7 +76,7 @@ public class BTreeFileReadTest extends SimpleDbTestBase {
 	public void readPage() {
 		BTreePageId rootPtrPid = new BTreePageId(f.getId(), 0, BTreePageId.ROOT_PTR);
 		BTreeRootPtrPage rootPtr = (BTreeRootPtrPage) f.readPage(rootPtrPid);
-
+		// BTreeRootPtrPage放在文件最前面，所以pgNo是0，接着就是root页，它的pgNo是1
 		assertEquals(1, rootPtr.getRootId().getPageNumber());
 		assertEquals(BTreePageId.LEAF, rootPtr.getRootId().pgcateg());
 
@@ -94,6 +95,7 @@ public class BTreeFileReadTest extends SimpleDbTestBase {
 		BTreeFile smallFile = BTreeUtility.createRandomBTreeFile(2, 3, null,
 				null, 0);
 
+		// BTreeFile的iterator中，open方法用到了findLeafPage
 		DbFileIterator it = smallFile.iterator(tid);
 		// Not open yet
 		assertFalse(it.hasNext());
@@ -146,6 +148,7 @@ public class BTreeFileReadTest extends SimpleDbTestBase {
 
 		// greater than
 		IndexPredicate ipred = new IndexPredicate(Op.GREATER_THAN, f);
+		// BTreeFile的indexIterator用到了findLeafPage
 		DbFileIterator it = twoLeafPageFile.indexIterator(tid, ipred);
 		it.open();
 		int count = 0;

@@ -341,12 +341,14 @@ public class BTreeLeafPage extends BTreePage {
 		// while keeping records in sorted order
 		int goodSlot = -1;
 		if(emptySlot < lessOrEqKey) {
+			// emptySlot在前，把小于等于t的tuple向前移动一位，腾出空间
 			for(int i = emptySlot; i < lessOrEqKey; i++) {
 				moveRecord(i+1, i);
 			}
 			goodSlot = lessOrEqKey;
 		}
 		else {
+			// emptySlot在后，把大于等于t的tuple向后移动一位，腾出空间
 			for(int i = emptySlot; i > lessOrEqKey + 1; i--) {
 				moveRecord(i-1, i);
 			}

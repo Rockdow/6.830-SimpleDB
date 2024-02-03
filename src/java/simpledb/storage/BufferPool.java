@@ -3,7 +3,6 @@ package simpledb.storage;
 import simpledb.common.Database;
 import simpledb.common.Permissions;
 import simpledb.common.DbException;
-import simpledb.common.DeadlockException;
 import simpledb.transaction.PageLockManager;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
@@ -39,6 +38,7 @@ public class BufferPool {
     private final int pageNum;
     private final Map<PageId,Page> map;
     private final PageLockManager lockManager;
+
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -94,7 +94,13 @@ public class BufferPool {
             if(map.containsKey(pid)){
                 return map.get(pid);
             }else {
-                evictPage();
+                try {
+                    evictPage();
+                } catch (DbException e){
+                    lockManager.releaseLock(tid,pid);
+                    throw e;
+                }
+
                 Page page = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
                 map.put(pid,page);
                 return page;
@@ -152,6 +158,8 @@ public class BufferPool {
                 try {
                     flushPage(pageId);
                     lockManager.releaseLock(tid,pageId);
+                    // lab6中要求对每个提交后的页都要重新设置beforeImage
+                    map.get(pageId).setBeforeImage();
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -235,9 +243,9 @@ public class BufferPool {
         are removed from the cache so they can be reused safely
     */
     public synchronized void discardPage(PageId pid) {
-        Page page = map.get(pid);
-        if(page == null)
-            throw new RuntimeException("bufferPool do not have the page");
+//        Page page = map.get(pid);
+//        if(page == null)
+//            throw new RuntimeException("bufferPool do not have the page");
         map.remove(pid);
     }
 
@@ -253,6 +261,11 @@ public class BufferPool {
             page = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
 
         if(page.isDirty() != null){
+            // 此处是lab6的WAL机制（实际上simpleDB使用的是no steal-force策略，不需要lab6的redo undo机制）
+            TransactionId dirtier = page.isDirty();
+            Database.getLogFile().logWrite(dirtier, page.getBeforeImage(), page);
+            Database.getLogFile().force();
+
             Database.getCatalog().getDatabaseFile(pid.getTableId()).writePage(page);
             page.markDirty(false,null);
             map.put(pid,page);
@@ -296,31 +309,38 @@ public class BufferPool {
 //            discardPage(optPageId);
 //        }
 
-        // 找到一个没有被事务上锁的clean页，将其驱逐
-        for(PageId pageId: map.keySet()){
-            Page page = map.get(pageId);
-            if(page.isDirty() == null){
-                if(!lockManager.isExistLock(pageId)){
-                    discardPage(pageId);
-                    return;
-                }
-            }
-        }
-        // 到这说明所有clean页被上锁
-        for(PageId pageId: map.keySet()){
-            Page page = map.get(pageId);
-            if(page.isDirty() == null){
-                if(lockManager.isExistLock(pageId)){
-                    if(lockManager.isOnlySLock(pageId)) {
-                        // 此处违反了2pl，但由于只是读锁，问题不大，因为要把页驱逐，必须把lockManager上对应页的锁也删除
-                        lockManager.removePageLock(pageId);
-                        discardPage(pageId);
-                        return;
-                    }
-                }else {
-                    discardPage(pageId);
-                    return;
-                }
+//        // 找到一个没有被事务上锁的clean页，将其驱逐
+//        for(PageId pageId: map.keySet()){
+//            Page page = map.get(pageId);
+//            if(page.isDirty() == null){
+//                if(!lockManager.isExistLock(pageId)){
+//                    discardPage(pageId);
+//                    return;
+//                }
+//            }
+//        }
+//        // 到这说明所有clean页被上锁
+//        for(PageId pageId: map.keySet()){
+//            Page page = map.get(pageId);
+//            if(page.isDirty() == null){
+//                if(lockManager.isExistLock(pageId)){
+//                    if(lockManager.isOnlySLock(pageId)) {
+//                        // 此处违反了2pl，但由于只是读锁，问题不大，因为要把页驱逐，必须把lockManager上对应页的锁也删除
+//                        lockManager.removePageLock(pageId);
+//                        discardPage(pageId);
+//                        return;
+//                    }
+//                }else {
+//                    discardPage(pageId);
+//                    return;
+//                }
+//            }
+//        }
+        for(Map.Entry<PageId, Page> entry : map.entrySet()) {
+            if(entry.getValue().isDirty() == null) {
+                discardPage(entry.getKey());
+                lockManager.removePageLock(entry.getKey());
+                return;
             }
         }
         // 到这说明都是dirty页

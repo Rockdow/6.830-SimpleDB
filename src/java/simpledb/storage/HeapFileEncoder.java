@@ -14,7 +14,7 @@ import java.util.List;
  * Pages are padded out to a specified length, and written consecutive in a
  * data file.
  */
-
+// 该类用于把普通的list数组转换成HeapFile格式的文件
 public class HeapFileEncoder {
 
   /** Convert the specified tuple list (with only integer fields) into a binary

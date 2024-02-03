@@ -77,6 +77,7 @@ public class BTreeInternalPage extends BTreePage {
 
 		// Read the parent pointer
 		try {
+			// 读出的第一个整数代表该BTreeInternalPage的父节点指针
 			Field f = Type.INT_TYPE.parse(dis);
 			this.parent = ((IntField) f).getValue();
 		} catch (java.text.ParseException e) {
@@ -84,9 +85,11 @@ public class BTreeInternalPage extends BTreePage {
 		}
 
 		// read the child page category
+		// 第二个字节代表子节点类型
 		childCategory = dis.readByte();
 
 		// allocate and read the header slots of this page
+		// 读取该页的头部，用来判断keys是否有效
 		header = new byte[getHeaderSize()];
 		for (int i=0; i<header.length; i++)
 			header[i] = dis.readByte();
@@ -97,6 +100,7 @@ public class BTreeInternalPage extends BTreePage {
 			// start from 1 because the first key slot is not used
 			// since a node with m keys has m+1 pointers
 			keys[0] = null;
+			// i-1是key[i]对应的left pointer索引，i是key[i]对饮的right pointer索引
 			for (int i=1; i<keys.length; i++)
 				keys[i] = readNextKey(dis,i);
 		}catch(NoSuchElementException e){
@@ -121,6 +125,7 @@ public class BTreeInternalPage extends BTreePage {
  	 */
 	public int getMaxEntries() {        
 		int keySize = td.getFieldType(keyField).getLen();
+		// 每个entry所占用的位数，INDEX_SIZE代表每个pointer占用的字节数（parent pointer、child pointer）
 		int bitsPerEntryIncludingHeader = keySize * 8 + INDEX_SIZE * 8 + 1;
 		// extraBits are: one parent pointer, 1 byte for child page category, 
 		// one extra child pointer (node with m entries has m+1 pointers to children), 1 bit for extra header
@@ -135,6 +140,7 @@ public class BTreeInternalPage extends BTreePage {
 	private int getHeaderSize() {        
 		int slotsPerPage = getMaxEntries() + 1;
 		int hb = (slotsPerPage / 8);
+		// 向上取整
 		if (hb * 8 < slotsPerPage) hb++;
 
 		return hb;
@@ -483,10 +489,12 @@ public class BTreeInternalPage extends BTreePage {
 		if (emptySlot == -1)
 			throw new DbException("called insertEntry on page with no empty slots.");        
 
+		// 插入的entry必须左右孩子有一个和已有的children[i]相同
 		// find the child pointer matching the left or right child in this entry
 		int lessOrEqKey = -1;
 		for (int i=0; i<numSlots; i++) {
 			if(isSlotUsed(i)) {
+				// 如果有指针相同，那么新插入的entry应该在key[i]的右边
 				if(children[i] == e.getLeftChild().getPageNumber() || children[i] == e.getRightChild().getPageNumber()) {
 					if(i > 0 && keys[i].compare(Op.GREATER_THAN, e.getKey())) {
 						throw new DbException("attempt to insert invalid entry with left child " + 
@@ -498,6 +506,7 @@ public class BTreeInternalPage extends BTreePage {
 					}
 					lessOrEqKey = i;
 					if(children[i] == e.getRightChild().getPageNumber()) {
+						// entry的右孩子与children[i]相同，那么用entry的左孩子覆盖children[i]，即entry插入key[i]右侧
 						children[i] = e.getLeftChild().getPageNumber();
 					}
 				}
