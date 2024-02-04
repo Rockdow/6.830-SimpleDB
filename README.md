@@ -25,6 +25,7 @@
 
 - 改进脏页驱逐策略
 - 改进连接查询COST计算方式
+- 通过test/simpledb/systemtest/BTreeTest.java测试
 - 实现每个Lab中的Extra Credit部分
 
 ### 鸣谢
