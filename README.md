@@ -13,14 +13,6 @@
 [![MIT License][license-shield]][license-url]
 [![LinkedIn][linkedin-shield]][linkedin-url]
 
- 
-## 目录
-
-- [上手指南](#上手指南)
-- [版本控制](#版本控制)
-- [作者](#作者)
-- [鸣谢](#鸣谢)
-
 ### 上手指南
 
 使用```git clone```将本项目克隆到本地，再使用```IDEA```编辑器打开即可。
