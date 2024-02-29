@@ -132,7 +132,7 @@ public class JoinOptimizer {
             // a join algorithm that's more complicated than a basic
             // nested-loops join.
             double ioCost = cost1 + card1 * cost2;
-            double cpuCost = card1 * cost2;
+            double cpuCost = card1 * card2;
             return ioCost + cpuCost;
         }
     }
