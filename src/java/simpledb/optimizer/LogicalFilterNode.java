@@ -8,7 +8,7 @@ import simpledb.execution.Predicate;
     <p>
     Where t is a table, f is a field in t, p is a predicate, and c is a constant
 */
-// 该类是存储 from子句 里的 filter 信息
+// 该类是存储 where子句 里的 filter 信息
 public class LogicalFilterNode {
     /** The alias of a table (or the name if no alias) over which the filter ranges */
     public final String tableAlias;
