@@ -129,7 +129,8 @@ public class HeapFile implements DbFile {
             throws DbException, IOException, TransactionAbortedException {
         // 返回的pages会被标记成脏页，留待BufferPool统一刷盘
         ArrayList<Page> pages = new ArrayList<>(1);
-        for(int pageNo=0;pageNo<this.numPages();pageNo++){
+        int pageNo = 0;
+        for(;pageNo<this.numPages();pageNo++){
             HeapPageId pageId = new HeapPageId(getId(), pageNo);
             HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, pageId, Permissions.READ_WRITE);
             if(page.getNumEmptySlots() > 0){
@@ -143,13 +144,28 @@ public class HeapFile implements DbFile {
         }
         // 走到这步说明已有的page不满足要求，需要创建新页，该新创建的页要立刻写入磁盘（单元测试的意思是这样）
         // 使用空的字节数组创建HeapPage，会划分好header和tuple部分，并初始化为未使用
-        HeapPage newPage = new HeapPage(new HeapPageId(getId(), this.numPages()), HeapPage.createEmptyPageData());
-        newPage.insertTuple(t);
-        this.writePage(newPage);
-        // 新建的页加入缓存
-        Database.getBufferPool().getPage(tid, newPage.getId(), Permissions.READ_WRITE);
-        pages.add(newPage);
-        return pages;
+        synchronized (file){
+            // 为了避免多个线程同时创建新数据页，使用synchronized对表文件上锁
+            if(pageNo == this.numPages()){
+                // 没有其它线程新建数据页，由本线程新建
+                HeapPage newPage = new HeapPage(new HeapPageId(getId(), this.numPages()), HeapPage.createEmptyPageData());
+                newPage.insertTuple(t);
+                this.writePage(newPage);
+                // 新建的页加入缓存
+                Database.getBufferPool().getPage(tid, newPage.getId(), Permissions.READ_WRITE);
+                pages.add(newPage);
+                return pages;
+            }else {
+                // 已有其它线程新建数据页，直接利用
+                HeapPageId pageId = new HeapPageId(getId(), this.numPages());
+                HeapPage page = (HeapPage) Database.getBufferPool().getPage(tid, pageId, Permissions.READ_WRITE);
+                page.insertTuple(t);
+                pages.add(page);
+                return pages;
+            }
+
+        }
+
     }
 
     // see DbFile.java for javadocs
